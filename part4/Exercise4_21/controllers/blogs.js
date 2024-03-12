@@ -8,13 +8,7 @@ blogsRouter.get('/api/blogs', async (request, response) => {
   const blogs = await Blog.find({}).populate('user')
   response.json(blogs);
 });
-const getTokenFrom = (request) => {
-  const authorization = request.get('authorization');
-  if (authorization && authorization.toLowerCase().startsWith('bearer ')) {
-    return authorization.substring(7);
-  }
-  return null;
-};
+
 
   blogsRouter.get('/api/blogs/:id', async (request, response) => {
     try {
@@ -41,13 +35,18 @@ const getTokenFrom = (request) => {
     }
   
     try {
-      const decodedToken = jwt.verify(getTokenFrom(request), process.env.SECRET)
-      if (!decodedToken.id) {
-        return response.status(401).json({ error: 'token invalid' })
+
+      if (!request.token) {
+        return response.status(401).json({ error: 'Token missing' });
       }
 
-      const user = await User.findById(decodedToken.id)
-      if (!user.id ||!decodedToken.id) {
+      const decodedToken = jwt.verify(request.token, process.env.SECRET)
+      if (!decodedToken.id) {
+        return response.status(401).json({ error: 'Token invalid' })
+      }
+
+      const user = request.user
+      if (!decodedToken.id) {
         return response.status(401).json({ error: 'Token missing or invalid' });
       }
      
@@ -77,17 +76,30 @@ const getTokenFrom = (request) => {
   });
   
   
-blogsRouter.delete('/api/blogs/:id', async (request, response) => {
-  try {
-    const deletedBlog = await Blog.findByIdAndDelete(request.params.id);
-    if (!deletedBlog) {
-      return response.status(404).json({ error: 'Blog not found' });
+  blogsRouter.delete('/api/blogs/:id', async (request, response) => {
+    try {
+      const decodedToken = jwt.verify(request.token, process.env.SECRET);
+      if ( !request.token || !decodedToken.id) {
+        return response.status(401).json({ error: 'Token missing or invalid' });
+      }
+  
+      const blog = await Blog.findById(request.params.id);
+      if (!blog) {
+        return response.status(404).json({ error: 'Blog not found' });
+      }
+  
+      if (blog.user.toString() !== decodedToken.id) {
+        return response.status(401).json({ error: 'Unauthorized: You are not allowed to delete this blog' });
+      }
+  
+      await Blog.findByIdAndDelete(request.params.id);
+      response.status(204).end();
+    } catch (error) {
+      console.error(error);
+      response.status(500).json({ error: 'Internal server error' });
     }
-    response.status(204).end();
-  } catch (error) {
-    response.status(500).json({ error: 'Internal server error' });
-  }
-});
+  });
+  
 
 blogsRouter.put('/api/blogs/:id', async (request, response) => {
   const body = request.body;
